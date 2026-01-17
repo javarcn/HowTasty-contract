@@ -22,6 +22,15 @@ contract HowTasty is ERC20, Ownable, ReentrancyGuard {
         uint256 timestamp;
     }
 
+    struct Ad {
+        address advertiser;
+        string contentHash; // IPFS 哈希 (图片或视频)
+        string title;
+        string link;        // 广告点击跳转链接 (可选)
+        uint256 timestamp;
+        bool isVideo;
+    }
+
     struct Merchant {
         uint256 id;
         string name;
@@ -44,6 +53,7 @@ contract HowTasty is ERC20, Ownable, ReentrancyGuard {
     mapping(uint256 => Review[]) public merchantReviews;
     mapping(uint256 => mapping(address => bool)) public hasVoted;
     mapping(address => uint256) public reputation;
+    Ad[] public ads;
 
     // --- 事件 ---
 
@@ -52,6 +62,7 @@ contract HowTasty is ERC20, Ownable, ReentrancyGuard {
     event ReputationUpdated(address indexed user, uint256 newReputation);
     event RewardsWithdrawn(address indexed creator, uint256 amount);
     event Redeemed(address indexed user, uint256 tastyAmount, uint256 monAmount);
+    event AdPublished(address indexed advertiser, string contentHash, string title, bool isVideo);
 
     // --- 错误定义 ---
 
@@ -66,6 +77,7 @@ contract HowTasty is ERC20, Ownable, ReentrancyGuard {
     // --- 状态变量扩展 ---
 
     uint256 public constant EXCHANGE_RATE = 10; // 10 TASTY = 1 MON
+    uint256 public constant AD_COST = 20 * 10**18; // 20 TASTY
 
     // --- 构造函数 ---
 
@@ -234,5 +246,42 @@ contract HowTasty is ERC20, Ownable, ReentrancyGuard {
         if (address(this).balance < _amount) revert InsufficientContractBalance();
         (bool success, ) = owner().call{value: _amount}("");
         if (!success) revert TransferFailed();
+    }
+
+    // --- 广告功能 (Advertising) ---
+
+    /**
+     * @dev 发布广告
+     * 消耗 20 $TASTY
+     */
+    function publishAd(
+        string memory _title,
+        string memory _contentHash,
+        string memory _link,
+        bool _isVideo
+    ) public nonReentrant {
+        if (balanceOf(msg.sender) < AD_COST) revert InsufficientBalance();
+
+        // 1. 消耗代币 (销毁)
+        _burn(msg.sender, AD_COST);
+
+        // 2. 存储广告
+        ads.push(Ad({
+            advertiser: msg.sender,
+            contentHash: _contentHash,
+            title: _title,
+            link: _link,
+            timestamp: block.timestamp,
+            isVideo: _isVideo
+        }));
+
+        emit AdPublished(msg.sender, _contentHash, _title, _isVideo);
+    }
+
+    /**
+     * @dev 获取所有广告
+     */
+    function getAllAds() public view returns (Ad[] memory) {
+        return ads;
     }
 }

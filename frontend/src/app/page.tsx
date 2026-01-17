@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, useBalance } from 'wagmi';
 import { FOOD_VOTING_ABI } from '../constants/abi';
-import { PlusCircle, ThumbsUp, ThumbsDown, Utensils, MapPin, Award, Coins, Loader2, MessageSquare, Clock, User, ImageIcon, Filter, TrendingUp, AlertTriangle } from 'lucide-react';
-import { formatEther } from 'viem';
+import { PlusCircle, ThumbsUp, ThumbsDown, Utensils, MapPin, Award, Coins, Loader2, MessageSquare, Clock, User, ImageIcon, Filter, TrendingUp, AlertTriangle, Megaphone, ExternalLink, Play } from 'lucide-react';
+import { formatEther, parseEther } from 'viem';
 
-const CONTRACT_ADDRESS = '0x34B21294a72c9e33005a16F4d186059ecd767fc5' as `0x${string}`;
+const CONTRACT_ADDRESS = '0xeF302213726FF0d17D5d0e8b46fBEF6B48E6ba26' as `0x${string}`;
 
 const getIpfsUrl = (hash: string) => {
   if (!hash) return '';
@@ -23,7 +23,7 @@ const getIpfsUrl = (hash: string) => {
   return `https://yellow-glad-falcon-454.mypinata.cloud/ipfs/${cleanHash}`;
 };
 
-function ReviewList({ merchantId }: { merchantId: number }) {
+function ReviewList({ merchantId, onVote, hasVoted, isConnected }: { merchantId: number, onVote: (id: number) => void, hasVoted: boolean, isConnected: boolean }) {
   const { data: reviews, isLoading } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: FOOD_VOTING_ABI,
@@ -32,61 +32,74 @@ function ReviewList({ merchantId }: { merchantId: number }) {
   });
 
   if (isLoading) return <div className="flex justify-center p-4"><Loader2 className="animate-spin text-orange-500" /></div>;
-  if (!reviews || (reviews as any[]).length === 0) return <div className="text-center p-4 text-gray-400 text-sm">暂无点评记录</div>;
 
   return (
     <div className="space-y-3 mt-4 border-t pt-4">
-      <h4 className="text-sm font-bold flex items-center gap-2 mb-2 text-gray-700">
-        <MessageSquare size={14} /> 历史点评 ({(reviews as any[]).length})
-      </h4>
-      {(reviews as any[]).slice().reverse().map((review, idx) => (
-        <div key={idx} className="bg-gray-50 rounded-lg p-3 text-sm border border-gray-100">
-          <div className="flex justify-between items-start mb-2">
-            <div className="flex items-center gap-2">
-              <div className={`p-1 rounded ${review.isUpvote ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                {review.isUpvote ? <ThumbsUp size={12} /> : <ThumbsDown size={12} />}
+      <div className="flex justify-between items-center mb-2">
+        <h4 className="text-sm font-bold flex items-center gap-2 text-gray-700">
+          <MessageSquare size={14} /> 历史点评 ({reviews ? (reviews as any[]).length : 0})
+        </h4>
+        {isConnected && !hasVoted && (
+          <button 
+            onClick={() => onVote(merchantId)}
+            className="text-[10px] bg-orange-500 text-white px-2 py-1 rounded font-bold hover:bg-orange-600 transition-colors flex items-center gap-1"
+          >
+            <PlusCircle size={10} /> 我也要评
+          </button>
+        )}
+      </div>
+      {!reviews || (reviews as any[]).length === 0 ? (
+        <div className="text-center p-4 text-gray-400 text-sm bg-gray-50 rounded-lg border border-dashed">暂无点评记录</div>
+      ) : (
+        (reviews as any[]).slice().reverse().map((review, idx) => (
+          <div key={idx} className="bg-gray-50 rounded-lg p-3 text-sm border border-gray-100">
+            <div className="flex justify-between items-start mb-2">
+              <div className="flex items-center gap-2">
+                <div className={`p-1 rounded ${review.isUpvote ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                  {review.isUpvote ? <ThumbsUp size={12} /> : <ThumbsDown size={12} />}
+                </div>
+                <span className="font-mono text-[10px] text-gray-500 bg-white px-1 border rounded flex items-center gap-1">
+                  <User size={10} /> {review.voter.slice(0, 6)}...{review.voter.slice(-4)}
+                </span>
               </div>
-              <span className="font-mono text-[10px] text-gray-500 bg-white px-1 border rounded flex items-center gap-1">
-                <User size={10} /> {review.voter.slice(0, 6)}...{review.voter.slice(-4)}
+              <span className="text-[10px] text-gray-400 flex items-center gap-1">
+                <Clock size={10} /> {new Date(Number(review.timestamp) * 1000).toLocaleString()}
               </span>
             </div>
-            <span className="text-[10px] text-gray-400 flex items-center gap-1">
-              <Clock size={10} /> {new Date(Number(review.timestamp) * 1000).toLocaleString()}
-            </span>
+            <p className="text-gray-700 mb-2 leading-relaxed">{review.comment}</p>
+            {review.imageHash && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-1 text-[10px] text-orange-600 bg-orange-50 w-fit px-2 py-0.5 rounded border border-orange-100">
+                  <ImageIcon size={10} /> 证据图片
+                </div>
+                <div className="relative w-full max-w-[200px] aspect-square rounded-lg overflow-hidden border border-gray-200 group bg-gray-100 flex items-center justify-center">
+                  <img 
+                    src={getIpfsUrl(review.imageHash)} 
+                    alt="Review evidence" 
+                    className="w-full h-full object-cover cursor-zoom-in transition-transform group-hover:scale-105"
+                    onClick={() => window.open(getIpfsUrl(review.imageHash), '_blank')}
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      const cleanHash = review.imageHash.replace('ipfs://', '');
+                      
+                      if (target.src.includes('mypinata.cloud')) {
+                        // Try public gateway as first fallback
+                        target.src = `https://ipfs.io/ipfs/${cleanHash}`;
+                      } else if (target.src.includes('ipfs.io')) {
+                        // Try cloudflare as second fallback
+                        target.src = `https://cloudflare-ipfs.com/ipfs/${cleanHash}`;
+                      } else {
+                        target.src = 'https://placehold.co/400x400?text=Image+Load+Failed';
+                        target.className = 'w-1/2 h-1/2 object-contain opacity-20';
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
-          <p className="text-gray-700 mb-2 leading-relaxed">{review.comment}</p>
-          {review.imageHash && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-1 text-[10px] text-orange-600 bg-orange-50 w-fit px-2 py-0.5 rounded border border-orange-100">
-                <ImageIcon size={10} /> 证据图片
-              </div>
-              <div className="relative w-full max-w-[200px] aspect-square rounded-lg overflow-hidden border border-gray-200 group bg-gray-100 flex items-center justify-center">
-                <img 
-                  src={getIpfsUrl(review.imageHash)} 
-                  alt="Review evidence" 
-                  className="w-full h-full object-cover cursor-zoom-in transition-transform group-hover:scale-105"
-                  onClick={() => window.open(getIpfsUrl(review.imageHash), '_blank')}
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    const cleanHash = review.imageHash.replace('ipfs://', '');
-                    
-                    if (target.src.includes('mypinata.cloud')) {
-                      // Try public gateway as first fallback
-                      target.src = `https://ipfs.io/ipfs/${cleanHash}`;
-                    } else if (target.src.includes('ipfs.io')) {
-                      // Try cloudflare as second fallback
-                      target.src = `https://cloudflare-ipfs.com/ipfs/${cleanHash}`;
-                    } else {
-                      target.src = 'https://placehold.co/400x400?text=Image+Load+Failed';
-                      target.className = 'w-1/2 h-1/2 object-contain opacity-20';
-                    }
-                  }}
-                />
-              </div>
-            </div>
-          )}
-        </div>
-      ))}
+        ))
+      )}
     </div>
   );
 }
@@ -172,19 +185,34 @@ function MerchantCard({
             <button
               onClick={() => onVote(Number(merchant.id))}
               disabled={!address || !!hasVoted}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm ${
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-2 ${
                 !!hasVoted 
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                 : 'bg-orange-500 text-white hover:bg-orange-600 active:scale-95'
               }`}
             >
-              {!!hasVoted ? '已评价' : '去评价'}
+              {!!hasVoted ? (
+                <>
+                  <Award size={14} />
+                  已评价
+                </>
+              ) : (
+                <>
+                  <ImageIcon size={14} />
+                  去评价
+                </>
+              )}
             </button>
           </div>
         </div>
         
         {isExpanded && (
-          <ReviewList merchantId={Number(merchant.id)} />
+          <ReviewList 
+            merchantId={Number(merchant.id)} 
+            onVote={onVote}
+            hasVoted={!!hasVoted}
+            isConnected={!!address}
+          />
         )}
       </div>
     </div>
@@ -200,6 +228,8 @@ export default function Home() {
   const [expandedMerchantId, setExpandedMerchantId] = useState<number | null>(null);
   const [showRankings, setShowRankings] = useState(false);
   const [showUserCenter, setShowUserCenter] = useState(false);
+  const [showPublishAd, setShowPublishAd] = useState(false);
+  const [adData, setAdData] = useState({ title: '', contentHash: '', link: '', isVideo: false });
   const [redeemAmount, setRedeemAmount] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -235,7 +265,19 @@ export default function Home() {
     query: { enabled: !!address },
   });
 
-  // 4. Filtered and Sorted Merchants
+  // 4. Fetch Ads
+  const { data: ads, refetch: refetchAds } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: FOOD_VOTING_ABI,
+    functionName: 'getAllAds',
+  });
+
+  // 5. Fetch Contract MON Balance (Reward Pool)
+  const { data: poolBalance, refetch: refetchPoolBalance } = useBalance({
+    address: CONTRACT_ADDRESS,
+  });
+
+  // 5. Filtered and Sorted Merchants
   const processedMerchants = useMemo(() => {
     if (!merchants) return [];
     let list = [...(merchants as any[])];
@@ -266,7 +308,14 @@ export default function Home() {
     setErrorMessage(null);
 
     try {
-      const amount = BigInt(Math.floor(Number(redeemAmount) * 10**18));
+      const amount = parseEther(redeemAmount);
+      
+      // Check if pool balance is sufficient (10:1 ratio)
+      const neededMon = amount / BigInt(10);
+      if (poolBalance && poolBalance.value < neededMon) {
+        throw new Error(`奖励池资金不足 (仅剩 ${poolBalance.formatted} MON)，请稍后再试或联系管理员补充。`);
+      }
+
       const txHash = await writeContractAsync({
         address: CONTRACT_ADDRESS,
         abi: FOOD_VOTING_ABI,
@@ -367,6 +416,8 @@ export default function Home() {
       refetchMerchants();
       refetchReputation();
       refetchBalance();
+      refetchAds();
+      refetchPoolBalance();
       // Reset voting state
       setVoteData({ comment: '', isUpvote: true, imageHash: '' });
     }
@@ -437,6 +488,80 @@ export default function Home() {
     }
   };
 
+  const handlePublishAd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!address || isUploading || !adData.contentHash) return;
+    
+    setIsError(false);
+    setErrorMessage(null);
+
+    try {
+      const txHash = await writeContractAsync({
+        address: CONTRACT_ADDRESS,
+        abi: FOOD_VOTING_ABI,
+        functionName: 'publishAd',
+        args: [adData.title, adData.contentHash, adData.link, adData.isVideo],
+        gas: BigInt(500000),
+      } as any);
+      
+      if (typeof txHash !== 'string' || !txHash.startsWith('0x')) {
+        throw new Error("交易发送失败");
+      }
+      setShowPublishAd(false);
+      setAdData({ title: '', contentHash: '', link: '', isVideo: false });
+    } catch (err: any) {
+      console.error("Publish ad failed:", err);
+      setIsError(true);
+      setErrorMessage(err.message || "广告发布失败");
+    }
+  };
+
+  const handleAdImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    // Check if it's a video
+    const isVideo = file.type.startsWith('video/');
+    
+    // Pinata API Keys
+    const PINATA_JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySW5mb3JtYXRpb24iOnsiaWQiOiJmMDc1ZTg1NC1lYTA1LTQ2YzctODA3ZC01N2ZiMjYzNDg5MjciLCJlbWFpbCI6IjI4MTQzMDY0NTBAcXEuY29tIiwiZW1haWxfdmVyaWZpZWQiOnRydWUsInBpbl9wb2xpY3kiOnsicmVnaW9ucyI6W3siZGVzaXJlZFJlcGxpY2F0aW9uQ291bnQiOjEsImlkIjoiRlJBMSJ9LHsiZGVzaXJlZFJlcGxpY2F0aW9uQ291bnQiOjEsImlkIjoiTllDMSJ9XSwidmVyc2lvbiI6MX0sIm1mYV9lbmFibGVkIjpmYWxzZSwic3RhdHVzIjoiQUNUSVZFIn0sImF1dGhlbnRpY2F0aW9uVHlwZSI6InNjb3BlZEtleSIsInNjb3BlZEtleUtleSI6ImM0ZjdlYzlkNmU4N2NkNDJlMmM3Iiwic2NvcGVkS2V5U2VjcmV0IjoiN2E5YzczMzA1MmM0MDljY2MxNDNhMzU0Yzg2MmYxMzUxODM3NTIxZjU2Y2E3OTUxNTQwMjNhZGRkOTJkNWMzOCIsImV4cCI6MTgwMDE2OTI5OH0.7ewnUukO6ppCglzvNCYGkkt-EzQD_2QG83y9wHYjMo8"; 
+
+    setIsUploading(true);
+    setUploadProgress(10);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const metadata = JSON.stringify({
+        name: `HowTasty_Ad_${Date.now()}`,
+      });
+      formData.append('pinataMetadata', metadata);
+
+      const res = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${PINATA_JWT.trim()}`,
+        },
+        body: formData,
+      });
+      
+      if (!res.ok) {
+        throw new Error(`Pinata error: ${res.status}`);
+      }
+      
+      const resData = await res.json();
+      setAdData(prev => ({ ...prev, contentHash: `ipfs://${resData.IpfsHash}`, isVideo }));
+      setUploadProgress(100);
+    } catch (error: any) {
+      console.error("Ad upload failed:", error);
+      alert(`媒体上传失败: ${error.message}`);
+    } finally {
+      setIsUploading(false);
+      setTimeout(() => setUploadProgress(0), 1000);
+    }
+  };
+
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -492,7 +617,7 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-gray-50 text-gray-900">
       {/* Navbar */}
-      <nav className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-3 shadow-sm">
+      <nav className="sticky top-0 z-[50] bg-white border-b border-gray-200 px-4 py-3 shadow-sm">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-2">
             <Utensils className="text-orange-500 w-8 h-8" />
@@ -500,19 +625,25 @@ export default function Home() {
               好吃么
             </h1>
           </div>
-          <div className="flex items-center gap-6">
-            <div className="hidden lg:flex items-center gap-6 text-sm font-medium text-gray-500">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 text-sm font-medium text-gray-500">
               <button 
                 onClick={() => setShowRankings(true)}
                 className="hover:text-orange-500 flex items-center gap-1.5 transition-colors"
               >
-                <TrendingUp size={16} /> 红黑榜
+                <TrendingUp size={16} /> <span className="hidden sm:inline">红黑榜</span>
               </button>
               <button 
                 onClick={() => setShowUserCenter(true)}
                 className="hover:text-orange-500 flex items-center gap-1.5 transition-colors"
               >
-                <User size={16} /> 食客中心
+                <User size={16} /> <span className="hidden sm:inline">食客中心</span>
+              </button>
+              <button 
+                onClick={() => setShowPublishAd(true)}
+                className="hover:text-orange-500 flex items-center gap-1.5 transition-colors"
+              >
+                <Megaphone size={16} /> <span className="hidden sm:inline">投放广告</span>
               </button>
             </div>
             {isConnected && (
@@ -598,6 +729,54 @@ export default function Home() {
                 <PlusCircle className="rotate-45" size={16} />
               </button>
             )}
+          </div>
+        )}
+
+        {/* 广告栏 */}
+        {ads && (ads as any[]).length > 0 && (
+          <div className="mt-6 mb-12 relative z-0">
+            <div className="bg-gradient-to-r from-orange-500 to-red-500 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-20 transition-opacity">
+                <Megaphone size={120} className="-rotate-12" />
+              </div>
+              
+              <div className="relative z-10 flex flex-col md:flex-row items-center gap-6">
+                <div className="w-full md:w-1/3 aspect-video bg-black/20 rounded-2xl overflow-hidden border border-white/20 flex items-center justify-center">
+                  {(ads as any[])[(ads as any[]).length - 1].isVideo ? (
+                    <video 
+                      src={getIpfsUrl((ads as any[])[(ads as any[]).length - 1].contentHash)} 
+                      controls 
+                      className="w-full h-full object-contain"
+                    />
+                  ) : (
+                    <img 
+                      src={getIpfsUrl((ads as any[])[(ads as any[]).length - 1].contentHash)} 
+                      alt="Advertisement" 
+                      className="w-full h-full object-cover"
+                    />
+                  )}
+                </div>
+                <div className="flex-1 text-center md:text-left">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/20 rounded-full text-[10px] font-bold uppercase tracking-wider mb-3">
+                    <Megaphone size={12} /> 社区赞助
+                  </div>
+                  <h3 className="text-2xl md:text-3xl font-black mb-2">{(ads as any[])[(ads as any[]).length - 1].title}</h3>
+                  <p className="text-white/80 text-sm mb-4 max-w-lg">
+                    这是一条由社区成员发布的赞助信息。支持 Web3 美食社区，共同打造最好的点评平台！
+                  </p>
+                  {(ads as any[])[(ads as any[]).length - 1].link && (
+                    <a 
+                      href={(ads as any[])[(ads as any[]).length - 1].link} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 bg-white text-orange-600 px-6 py-2 rounded-xl font-bold text-sm hover:bg-orange-50 transition-colors shadow-lg active:scale-95"
+                    >
+                      立即前往 <ExternalLink size={14} />
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -781,12 +960,29 @@ export default function Home() {
 
                 {/* Redeem Section */}
                 <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100">
-                  <h4 className="font-bold mb-4 flex items-center gap-2">
-                    <Coins className="text-orange-500" size={18} /> 兑换 MON 测试币
-                  </h4>
+                  <div className="flex justify-between items-center mb-4">
+                    <h4 className="font-bold flex items-center gap-2">
+                      <Coins className="text-orange-500" size={18} /> 兑换 MON 测试币
+                    </h4>
+                    <div className="flex flex-col items-end">
+                      <span className="text-[9px] text-gray-400 font-bold uppercase">奖励池余额</span>
+                      <span className={`text-xs font-black ${poolBalance && poolBalance.value > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                        {poolBalance ? `${Number(poolBalance.formatted).toFixed(4)} MON` : '加载中...'}
+                      </span>
+                    </div>
+                  </div>
                   <p className="text-xs text-gray-500 mb-4 bg-orange-50 p-2 rounded border border-orange-100">
                     当前兑换比例: <b>10 $TASTY = 1 MON</b>
                   </p>
+                  
+                  {poolBalance && poolBalance.value === BigInt(0) && (
+                    <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded-xl flex items-start gap-2 text-red-600">
+                      <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                      <p className="text-[10px] leading-relaxed">
+                        <b>警告:</b> 当前奖励池余额为 0。您可以继续获得 $TASTY，但暂时无法兑换 MON。请联系管理员或在群里反馈补充资金。
+                      </p>
+                    </div>
+                  )}
                   <form onSubmit={handleRedeem} className="space-y-4">
                     <div>
                       <label className="text-[10px] uppercase font-bold text-gray-400 mb-1 block">兑换数量 ($TASTY)</label>
@@ -812,7 +1008,7 @@ export default function Home() {
                     </div>
                     <button
                       type="submit"
-                      disabled={!redeemAmount || Number(redeemAmount) <= 0 || isPending || (tastyBalance && BigInt(Math.floor(Number(redeemAmount) * 10**18)) > (tastyBalance as bigint))}
+                      disabled={!redeemAmount || Number(redeemAmount) <= 0 || isPending || (tastyBalance && parseEther(redeemAmount) > (tastyBalance as bigint))}
                       className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-all shadow-md disabled:opacity-50 disabled:grayscale"
                     >
                       {isPending ? <Loader2 className="animate-spin mx-auto" /> : '立即兑换'}
@@ -936,6 +1132,116 @@ export default function Home() {
             </div>
           )}
         </div>
+
+        {/* Publish Ad Modal */}
+        {showPublishAd && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl overflow-y-auto max-h-[90vh]">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-bold flex items-center gap-2">
+                  <Megaphone className="text-orange-500" /> 投放社区广告
+                </h3>
+                <button onClick={() => setShowPublishAd(false)} className="text-gray-400 hover:text-gray-600">
+                  <PlusCircle className="rotate-45" size={24} />
+                </button>
+              </div>
+
+              <form onSubmit={handlePublishAd} className="space-y-4">
+                <div className="bg-orange-50 p-4 rounded-xl border border-orange-100 mb-4">
+                  <div className="flex items-center gap-3 text-orange-800">
+                    <Coins size={20} className="text-orange-500" />
+                    <div>
+                      <p className="text-sm font-bold">发布成本: 20 $TASTY</p>
+                      <p className="text-[10px] opacity-70">投放后广告将展示在首页顶部赞助位。</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">广告标题</label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="例如：Monad 开发者大会开始报名啦！"
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
+                    value={adData.title}
+                    onChange={(e) => setAdData({ ...adData, title: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">媒体素材 (图片或视频)</label>
+                  <div className="relative group">
+                    <input
+                      type="file"
+                      accept="image/*,video/*"
+                      onChange={handleAdImageUpload}
+                      className="hidden"
+                      id="ad-media-upload"
+                      disabled={isUploading}
+                    />
+                    <label
+                      htmlFor="ad-media-upload"
+                      className={`flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-xl cursor-pointer transition-all ${
+                        adData.contentHash 
+                        ? 'border-green-500 bg-green-50' 
+                        : 'border-gray-200 bg-gray-50 hover:bg-gray-100 hover:border-orange-400'
+                      } ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      {isUploading ? (
+                        <div className="flex flex-col items-center">
+                          <Loader2 className="animate-spin text-orange-500 mb-2" />
+                          <span className="text-xs text-gray-500">上传媒体中 ({uploadProgress}%)...</span>
+                        </div>
+                      ) : adData.contentHash ? (
+                        <div className="flex flex-col items-center text-green-600 p-4">
+                          {adData.isVideo ? <Play size={32} className="mb-2" /> : <ImageIcon size={32} className="mb-2" />}
+                          <span className="text-xs font-bold">素材已就绪 ({adData.isVideo ? '视频' : '图片'})</span>
+                          <span className="text-[10px] text-green-500 opacity-60 truncate max-w-full mt-1">{adData.contentHash}</span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center text-gray-400">
+                          <ImageIcon size={32} className="mb-2" />
+                          <span className="text-xs">点击上传广告素材</span>
+                          <span className="text-[9px] mt-1 text-gray-400 opacity-60">支持图片 (JPG/PNG/WEBP) 和视频 (MP4)</span>
+                        </div>
+                      )}
+                    </label>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">跳转链接 (可选)</label>
+                  <input
+                    type="url"
+                    placeholder="https://..."
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
+                    value={adData.link}
+                    onChange={(e) => setAdData({ ...adData, link: e.target.value })}
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowPublishAd(false)}
+                    className="flex-1 px-4 py-3 border rounded-xl hover:bg-gray-50 font-bold"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isPending || isUploading || !adData.title || !adData.contentHash || (tastyBalance && parseEther('20') > (tastyBalance as bigint))}
+                    className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-all shadow-lg disabled:opacity-50 disabled:grayscale flex items-center justify-center gap-2"
+                  >
+                    {isPending ? <Loader2 className="animate-spin" size={18} /> : <Megaphone size={18} />}
+                    {tastyBalance && parseEther('20') > (tastyBalance as bigint) ? '余额不足' : '立即投放'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
         {/* Voting Modal */}
         {votingMerchantId !== null && (
