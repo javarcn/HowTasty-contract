@@ -77,7 +77,7 @@ contract HowTasty is ERC20, Ownable, ReentrancyGuard {
     // --- 状态变量扩展 ---
 
     uint256 public constant EXCHANGE_RATE = 10; // 10 TASTY = 1 MON
-    uint256 public constant AD_COST = 20 * 10**18; // 20 TASTY
+    uint256 public constant AD_COST = 8 * 10**18; // 8 TASTY
 
     // --- 构造函数 ---
 
